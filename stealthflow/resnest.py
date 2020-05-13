@@ -105,7 +105,7 @@ class ResNeStBlock():#tf.keras.layers.Layer):
             # (b/r, 1) x R
             g_arr = tf.keras.layers.Concatenate(axis=-1)(list_g) if(self.R > 1) else list_g[0] # (b/r, 1) x R -> (b/r, R)
 
-            a = tf.nn.softmax(g_arr, axis=-1) # "radix" 方向に Softmax
+            a = tf.nn.softmax(g_arr, axis=-1) if(self.R > 1) else tf.math.sigmoid(g_arr) # "radix" 方向に Softmax
 
             list_V = []
             for r in range(self.R):

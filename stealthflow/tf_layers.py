@@ -63,7 +63,7 @@ class MyBlock():
         x = self.mylayer.dense(10, activation="softmax")(x)
         return x
 
-    def classification_GAP(self, num_classes):
+    def classification_GAP(self, x, num_classes):
         x = self.mylayer.conv_1x1(num_classes)(x)
         x = tf.keras.layers.GlobalAveragePooling2D()(x)
         x = tf.nn.softmax(x)
