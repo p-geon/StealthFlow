@@ -2,8 +2,8 @@ import numpy as np
 import tensorflow as tf
 
 class MyLayer():
-    def __init__(self):
-        self.regularizer = None#tf.keras.regularizers.l2(0.0001) # with a weight decay of 0.0001 (5.1 Implementation Details)
+    def __init__(self, regularizer=None):
+        self.regularizer = regularizer
 
     def batchnorm(self):
         """
@@ -42,8 +42,8 @@ class MyLayer():
                                         )
 
 class MyBlock():
-    def __init__(self):
-        self.mylayer = MyLayer()
+    def __init__(self, regularizer=None):
+        self.mylayer = MyLayer(regularizer)
 
     def conv_3x3_batch_relu(self, x, ch):
         x = self.mylayer.conv_3x3(ch, activation=None)(x)

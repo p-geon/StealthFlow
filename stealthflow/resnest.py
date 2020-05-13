@@ -3,13 +3,16 @@ import tensorflow as tf
 
 from .tf_layers import MyLayer
 
-class ResNeStBlock():
-    def __init__(self, radix, cardinality, bottleneck, ratio):
+class ResNeStBlock():#tf.keras.layers.Layer):
+    def __init__(self, radix, cardinality, bottleneck, ratio, regularizer=None):#, show_shapes=True):
         """
         (3.1 Split-Attention Block)
         K: "cardinality" hyperparameter
         R: "radix" hyperparameter
         """
+        #self.show_shapes = show_shapes
+        #super(ResNeStBlock, self).__init__()
+
         self.R = radix
         self.K = cardinality
         self.b = bottleneck # ResNeXt Bottle-Neck
@@ -18,9 +21,10 @@ class ResNeStBlock():
         # width = b * K
         # C -> bK -> b x K -> bK -> C; c'/k = b (Fig1)
 
-        self.mylayer = MyLayer()
+        self.mylayer = MyLayer(regularizer)
 
     def build(self, input_shape):
+        #super(ResNeStBlock, self).build(input_shape)
 
         self.ch = input_shape[-1]
 
@@ -45,7 +49,7 @@ class ResNeStBlock():
         self.batchnorm_final = self.mylayer.batchnorm()
         self.conv_1x1_final = self.mylayer.conv_1x1(self.ch)
 
-    def block(self, x):
+    def __call__(self, x):
         self.build(x.shape)
 
         path = x # input, (H, W, C)
