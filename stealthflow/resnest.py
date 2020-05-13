@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 
-from tf_layers import MyLayer
+from .tf_layers import MyLayer
 
 class ResNeStBlock():
     def __init__(self, radix, cardinality, bottleneck, ratio):

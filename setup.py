@@ -11,7 +11,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 setup(
     name='StealthFlow',
     packages=['stealthflow'],
-    version='0.0.2',
+    version='0.0.4',
     license='MIT',
     install_requires=[],
     author='StealthFlow',
