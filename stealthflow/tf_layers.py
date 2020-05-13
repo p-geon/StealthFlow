@@ -51,13 +51,20 @@ class MyBlock():
         x = tf.nn.relu(x)
         return x
 
-    def classification_MLP(self, x):
+    def classification_MLP(self, x, num_classes, num_units=1024, dropout=0.2):
         """
         "A drop layer is inserted before the final classification layer with dropout ratio = 0.2." (5.1 Implementation Details)
         """
         LEN_FEATURE_VECTOR = x.shape[1]*x.shape[2]*x.shape[3]
         x = tf.keras.layers.Reshape(target_shape=(LEN_FEATURE_VECTOR, ))(x)
-        x = self.mylayer.dense(256, activation="relu")(x) # 256は適当
+        x = tf.keras.layers.Dropout(rate=0.2)(x)
+        x = self.mylayer.dense(num_units, activation="relu")(x)
         x = tf.keras.layers.Dropout(rate=0.2)(x)
         x = self.mylayer.dense(10, activation="softmax")(x)
+        return x
+
+    def classification_GAP(self, num_classes):
+        x = self.mylayer.conv_1x1(num_classes)(x)
+        x = tf.keras.layers.GlobalAveragePooling2D()(x)
+        x = tf.nn.softmax(x)
         return x

@@ -13,6 +13,20 @@ class ResNeStBlock():#tf.keras.layers.Layer):
         #self.show_shapes = show_shapes
         #super(ResNeStBlock, self).__init__()
 
+        # Check Type
+        assert isinstance(radix, int), "const`radix` must be int"
+        assert isinstance(cardinality, int), "const`cardinality` must be int"
+        assert isinstance(bottleneck, int), "const`bottleneck` must be int"
+        assert isinstance(ratio, int), "const`ratio` must be int"
+
+        assert radix > 0, "const`radix` must be positive"
+        assert cardinality > 0, "const`cardinality` must be positive"
+        assert bottleneck > 0, "const`bottleneck` must be positive"
+        assert ratio > 0, "const`ratio` must be positive"
+
+        assert bottleneck > radix * ratio, "const`bottleneck` must be greater than `radix`*`ratio`, It's meaningless because it's channel zero. "
+
+
         self.R = radix
         self.K = cardinality
         self.b = bottleneck # ResNeXt Bottle-Neck
@@ -74,7 +88,8 @@ class ResNeStBlock():#tf.keras.layers.Layer):
                 list_split.append(x)
             # (H, W, b/r) x R
 
-            x = tf.keras.layers.Add()(list_split) # (H, W, b/r) x R -> (H, W, b/r)
+            x = tf.keras.layers.Add()(list_split) if(self.R > 1) else list_split[0]
+
             x = tf.keras.layers.GlobalAveragePooling2D()(x) # (H, W, b/r) -> (b/r, )
             x = self.arr_dense[k](x) # (b/r, ) -> (b/r/ratio', ); ratio=4 (これどこに実験設定ある？)
             x = self.arr_batchnorm[k](x)
@@ -88,7 +103,8 @@ class ResNeStBlock():#tf.keras.layers.Layer):
                 x = tf.keras.layers.Reshape(target_shape=(self.b//self.R, 1))(x) # (b/r, ) -> (b/r, 1); Concatenate 用に次元拡張 (Concatenate は次元を跨いだ Softmax のため)
                 list_g.append(x)
             # (b/r, 1) x R
-            g_arr = tf.keras.layers.Concatenate(axis=-1)(list_g) # (b/r, 1) x R -> (b/r, R)
+            g_arr = tf.keras.layers.Concatenate(axis=-1)(list_g) if(self.R > 1) else list_g[0] # (b/r, 1) x R -> (b/r, R)
+
             a = tf.nn.softmax(g_arr, axis=-1) # "radix" 方向に Softmax
 
             list_V = []
@@ -98,11 +114,13 @@ class ResNeStBlock():#tf.keras.layers.Layer):
                 list_V.append(x)
             # (H, W, b/r) x R
 
-            V = tf.keras.layers.Add()(list_V) # (H, W, b/r) x R -> (H, W, b)
+            V = tf.keras.layers.Add()(list_V) if(self.R > 1) else list_V[0] # (H, W, b/r) x R -> (H, W, b)
+
             list_cardinal.append(V)
         # (H, W, b) x K
 
-        x = tf.keras.layers.Concatenate(axis=-1)(list_cardinal) # (H, W, b) x K -> (H, W, bK)
+        x = tf.keras.layers.Concatenate(axis=-1)(list_cardinal) if(self.K > 1) else list_cardinal[0] # (H, W, b) x K -> (H, W, bK)
+
         x = self.conv_1x1_final(x) # (H, W, bk) -> (H, W, C)
         x = self.batchnorm_final(x)
         x += path # (H, W, C) + (H, W, C)
