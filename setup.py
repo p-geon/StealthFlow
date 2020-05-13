@@ -19,7 +19,7 @@ setup(
     url='https://github.com/p-geon/StealthFlow',
     description='Supporting Modules for MachineLearning.',
     long_description=long_description,
-    long_description_content_type='text/markdown'
+    long_description_content_type='text/markdown',
     keywords='stealthflow StealthFlow',
 
     classifiers=[
