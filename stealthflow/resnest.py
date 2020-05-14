@@ -114,14 +114,14 @@ class ResNeStBlock():#tf.keras.layers.Layer):
                 list_V.append(x)
             # (H, W, b/r) x R
 
-            V = tf.keras.layers.Add()(list_V) if(self.R > 1) else list_V[0] # (H, W, b/r) x R -> (H, W, b)
+            V = tf.keras.layers.Add()(list_V) if(self.R > 1) else list_V[0] # (H, W, b/r) x R -> (H, W, b/r)
 
             list_cardinal.append(V)
-        # (H, W, b) x K
+        # (H, W, b/r) x K
 
-        x = tf.keras.layers.Concatenate(axis=-1)(list_cardinal) if(self.K > 1) else list_cardinal[0] # (H, W, b) x K -> (H, W, bK)
+        x = tf.keras.layers.Concatenate(axis=-1)(list_cardinal) if(self.K > 1) else list_cardinal[0] # (H, W, b/r) x K -> (H, W, bK/r)
 
-        x = self.conv_1x1_final(x) # (H, W, bk) -> (H, W, C)
+        x = self.conv_1x1_final(x) # (H, W, bk/r) -> (H, W, C)
         x = self.batchnorm_final(x)
         x += path # (H, W, C) + (H, W, C)
         x = tf.nn.relu(x)
