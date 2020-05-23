@@ -1,2 +1,3 @@
 # StealthFlow
-TensorFlow custom layer
+
+Deep Learning utils
