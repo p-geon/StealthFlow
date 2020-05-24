@@ -28,12 +28,10 @@ def calc_cov(x):
     return cov_xx
 
 # -------------------------------------------------------
-# FID
+# FID (Numpy)
 # -------------------------------------------------------
-
-class FID:
-    def __init__(self, library=["Numpy", "TF", "TFp"][0], batch_size=50, scaling=True, preprocess_input=True):
-        self.library = library
+class FIDNumpy:
+    def __init__(self, batch_size=50, scaling=True, preprocess_input=True):
         self.model_shape = (299,299,3) # Inception V3
         self.BATCH_SIZE = batch_size
 
@@ -42,20 +40,11 @@ class FID:
 
         self.preprocess_input = preprocess_input
 
-        if(library=="Numpy"):
-            self.calc_FID = self.FID_using_Numpy
-        elif(library=="TF"):
-            self.calc_FID = self.FID_using_TF
-        elif(library=="TFp"):
-            self.calc_FID = self.FID_using_TFp
-        else:
-            raise ValueError("Invalid Argument")
-
     """ ------------------------
     FID: Numpy
     """
     # calculate frechet inception distance
-    def calculate_fid_np(self, feat1, feat2):
+    def feat_to_fid_numpy(self, feat1, feat2):
         mu1, sigma1 = feat1.mean(axis=0), np.cov(feat1, rowvar=False)
         mu2, sigma2 = feat2.mean(axis=0), np.cov(feat2, rowvar=False)
 
@@ -68,14 +57,30 @@ class FID:
             covmean = covmean.real
         return ssdiff + np.trace(sigma1 + sigma2 - 2.0 * covmean)
 
-    def FID_using_Numpy(self, imgs1: '4-D Tensor', imgs2: '4-D Tensor') -> 'FID':
+    def calc_fid_using_numpy(self, imgs1: '4-D Tensor', imgs2: '4-D Tensor') -> 'FID':
+        print("Numpy mode")
+        assert len(imgs1.shape) == 4, "imgs1 shape must be 4-D Tensor"
+        assert len(imgs2.shape) == 4, "imgs2 shape must be 4-D Tensor"
+
+        assert imgs1.max() <= 1.0, "Invalid imgs1 value, over 1.0"
+        assert imgs2.max() <= 1.0, "Invalid imgs2 value, over 1.0"
+        assert imgs1.min() >= 0.0, "Invalid imgs1 value, under 0.0"
+        assert imgs2.min() >= 0.0, "Invalid imgs2 value, under 0.0"
+
+        assert isinstance(imgs1[0,0,0,0], np.float32), "Type Error, imgs type must be float" # arrayのうちの一つをチェック
+        assert isinstance(imgs2[0,0,0,0], np.float32), "Type Error, imgs type must be float" #
 
         NUM_ITER = imgs1.shape[0] // self.BATCH_SIZE
         feat1 = np.zeros(shape=[0, 2048])
         feat2 = np.zeros(shape=[0, 2048])
 
+        if(self.preprocess_input==True):
+            # range: [0.0, 1.0] -> [-1.0, 1.0]
+            imgs1 = tf.keras.applications.inception_v3.preprocess_input(255.0*imgs1) # [?: 0, 255] -> [float32:-1, 1]
+            imgs2 = tf.keras.applications.inception_v3.preprocess_input(255.0*imgs2) # https://www.tensorflow.org/api_docs/python/tf/keras/applications/inception_v3/preprocess_input
+
         for i in range(NUM_ITER):
-            if(i%10 == 0): print(f"calculating features...(numpy), batch:{i}")
+            if(i%10 == 0): print(f"calculating features...(numpy), batch:{i+1}/{NUM_ITER}")
             imgs1_batch = imgs1[self.BATCH_SIZE*i:self.BATCH_SIZE*(i+1)]
             imgs2_batch = imgs2[self.BATCH_SIZE*i:self.BATCH_SIZE*(i+1)]
 
@@ -96,10 +101,26 @@ class FID:
             new_feat2 = self.model.predict(imgs2_batch, batch_size=self.BATCH_SIZE)
             feat1 = np.concatenate([feat1, new_feat1], axis=0)
             feat2 = np.concatenate([feat2, new_feat2], axis=0)
-        return self.calculate_fid_np(feat1, feat2)
-    """ ------------------------
-    FID: TensorFlow
-    """
+        return self.feat_to_fid_numpy(feat1, feat2)
+
+    def __call__(self, imgs1, imgs2):
+        return self.calc_fid_using_numpy(imgs1, imgs2)
+
+""" ------------------------
+FID: TensorFlow
+"""
+class FIDTF:#(tf.keras.layers.Layer):
+    def __init__(self, batch_size, scaling=True, preprocess_input=True):
+        #super(FIDLayer, self).__init__()
+        self.model_shape = (299,299,3) # Inception V3
+        self.BATCH_SIZE = batch_size
+        print(batch_size)
+
+        self.model = tf.keras.applications.inception_v3.InceptionV3(include_top=False, pooling='avg', input_shape=self.model_shape)
+        self.scaling = scaling
+
+        self.preprocess_input = preprocess_input
+
     def rescale_color_images_tf(self, imgs1, imgs2):
         imgs1 = tf.image.resize(imgs1, size=(self.model_shape[0], self.model_shape[1]), method="nearest")
         imgs2 = tf.image.resize(imgs2, size=(self.model_shape[0], self.model_shape[1]), method="nearest")
@@ -113,7 +134,7 @@ class FID:
         return imgs1, imgs2
 
     @tf.function
-    def calc_fid_tf_graph(self, feat1, feat2):
+    def feat_to_fid_tf(self, feat1, feat2):
         # Python const.
         EPS_VAL = 1e-6
         LENGTH_FEATURE_VEC = 2048
@@ -136,8 +157,11 @@ class FID:
         fid = ssdiff + tf.linalg.trace(sigma1 + sigma2 - 2.0 * covmean)
         return tf.cast(fid, dtype=tf.float32)
 
+    @tf.function
     def fid_tf_loop(self, i, feat1, feat2, imgs1, imgs2):
-        op = tf.cond(pred=(tf.math.mod(i, 10)==0), true_fn=lambda: tf.print("calculating features...(tfp), batch:", i), false_fn=lambda: tf.no_op())
+        op = tf.cond(pred=(tf.math.mod(i, 10)==0)
+                , true_fn=lambda: tf.print("calculating features...(tfp), batch:", i+1, "/", imgs1.shape[0]//tf.constant(self.BATCH_SIZE))
+                , false_fn=lambda: tf.no_op())
 
         # バッチの切り抜き。書き方が特殊, [None, 28, 28, 1] -> [bs, 28, 28, 1]
         _imgs1 = tf.slice(input_=imgs1, begin=[self.BATCH_SIZE*i, 0, 0, 0], size=[self.BATCH_SIZE, imgs1.get_shape()[1], imgs1.get_shape()[2], imgs1.get_shape()[3]])
@@ -164,9 +188,16 @@ class FID:
         return (tf.add(i, 1), feat1, feat2, imgs1, imgs2, ) # ←最後の一個を空けるカンマが必要
 
     @tf.function
-    def FID_using_TFp(self, imgs1: '4-D tf-Tensor', imgs2: '4-D tf-Tensor') -> '4-D tf-Tensor':
+    def calc_fid_using_tfp(self, imgs1: '4-D tf-Tensor', imgs2: '4-D tf-Tensor') -> '4-D tf-Tensor':
+        print("TFp mode")
 
-        NUM_ITER = imgs1.shape[0] // self.BATCH_SIZE
+        # preprocessing
+        if(self.preprocess_input==True):
+            # range: [0.0, 1.0] -> [-1.0, 1.0]
+            imgs1 = tf.keras.applications.inception_v3.preprocess_input(255.0*imgs1) # [?: 0, 255] -> [float32:-1, 1]
+            imgs2 = tf.keras.applications.inception_v3.preprocess_input(255.0*imgs2) # https://www.tensorflow.org/api_docs/python/tf/keras/applications/inception_v3/preprocess_input
+
+        NUM_ITER = imgs1.shape[0] // tf.constant(self.BATCH_SIZE)
         i = tf.constant(0)
 
         feat1 = tf.zeros(shape=(0, 2048), dtype=tf.float32) # Stackする
@@ -180,102 +211,38 @@ class FID:
                 , shape_invariants=[i.get_shape(), tf.TensorShape([None, 2048]), tf.TensorShape([None, 2048]), imgs1.get_shape(), imgs2.get_shape()]
           )
 
-        fid = self.calc_fid_tf_graph(feat1, feat2) # (Datalength, 2048) x 2
+        fid = self.feat_to_fid_tf(feat1, feat2) # (Datalength, 2048) x 2
         return fid
+    """
+    def build(self, input_shape):
+        pass
 
-    def FID_using_TF(self, img):
-        raise NotImplementedError("")
-
+    def call(self, imgs1, imgs2):
+        return self.calc_fid_using_tfp(imgs1, imgs2)
+    """
     def __call__(self, imgs1, imgs2):
-        """
-        Input:
-            imgs1: range[0.0, 1.0]
-          , imgs2: range[0.0, 1.0]
-        Output
-            fid score (float)
-        """
-        # Type Check
-        assert len(imgs1.shape) == 4, "imgs1 shape must be 4-D Tensor"
-        assert len(imgs2.shape) == 4, "imgs2 shape must be 4-D Tensor"
+        return self.calc_fid_using_tfp(imgs1, imgs2)
 
-        assert imgs1.max() <= 1.0, "Invalid imgs1 value, over 1.0"
-        assert imgs2.max() <= 1.0, "Invalid imgs2 value, over 1.0"
-        assert imgs1.min() >= 0.0, "Invalid imgs1 value, under 0.0"
-        assert imgs2.min() >= 0.0, "Invalid imgs2 value, under 0.0"
+if(__name__ == "__main__"):
+    # pip install -i https://test.pypi.org/simple/ StealthFlow
 
-        assert isinstance(imgs1[0,0,0,0], np.float32), "Type Error, imgs type must be float" # arrayのうちの一つをチェック
-        assert isinstance(imgs2[0,0,0,0], np.float32), "Type Error, imgs type must be float" #
+    import tensorflow as tf
+    import numpy as np
+    #from stealthflow.fid import FID
 
-        # range: [0.0, 1.0] -> [-1.0, 1.0]
-        imgs1 = tf.keras.applications.inception_v3.preprocess_input(255.0*imgs1) # [?: 0, 255] -> [float32:-1, 1]
-        imgs2 = tf.keras.applications.inception_v3.preprocess_input(255.0*imgs2) # https://www.tensorflow.org/api_docs/python/tf/keras/applications/inception_v3/preprocess_input
+    (images1, _), (images2, _) = tf.keras.datasets.mnist.load_data()
+    images1 = images1.astype(np.float32).reshape(-1, 28, 28, 1)/255.0
+    images2 = images2.astype(np.float32).reshape(-1, 28, 28, 1)/255.0
+    images1, images2 = images1[0:10000], images2[0:10000]
 
-        if(self.library == "TFp"):
-            imgs1 = tf.constant(imgs1, dtype=tf.float32)
-            imgs2 = tf.constant(imgs2, dtype=tf.float32)
+    fid_score = FIDNumpy(batch_size=50, scaling=True)(images1, images2)
+    print("FID numpy: ", fid_score)
 
-        return self.calc_FID(imgs1, imgs2)
+    images1 = tf.constant(images1, dtype=tf.float32)
+    images2 = tf.constant(images2, dtype=tf.float32)
 
-# -------------------------------------------------------
-# calculate FID Test
-# -------------------------------------------------------
-def test():
-    # load cifar10 images
-    import time
+    images1 = tf.convert_to_tensor(images1, dtype=tf.float32)
+    images2 = tf.convert_to_tensor(images2, dtype=tf.float32)
 
-    for lib in ["Numpy", "TFp"]:
-        print("zeros")
-        # random images
-        images1 = np.ones(shape=[120, 28, 28, 1])*255.0
-        images2 = np.zeros(shape=[120, 28, 28, 1])
-
-        images1 = images1.astype(np.float32)/255.0
-        images2 = images2.astype(np.float32)/255.0
-
-        # calculate fid
-        fid = FID(library=lib)
-        start_time = time.time()
-        fid_score = fid(images1, images2)
-        print(f"{lib}. Time spent: {time.time() - start_time:.1f}[s]")
-        print(f"FID: {fid_score:.3f}")
-
-    for lib in ["Numpy", "TFp"]:
-        print("MNIST")
-        # MNIST, train-test
-        (images1, _), (images2, _) = tf.keras.datasets.mnist.load_data()
-
-        print("images1:max/min", images1.max(), images1.min())
-
-        images1 = images1.astype(np.float32).reshape(-1, 28, 28, 1)/255.0
-        images2 = images2.astype(np.float32).reshape(-1, 28, 28, 1)/255.0
-
-        images1 = images1[:3000]
-        images2 = images2[:3000]
-
-        # calculate fid
-        fid = FID(library=lib, batch_size=50)
-        start_time = time.time()
-        fid_score = fid(images1, images2)
-        print(f"{lib}. Time spent: {time.time() - start_time:.1f}[s]")
-        print(f"FID: {fid_score:.3f}")
-
-    for lib in ["Numpy", "TFp"]:
-        print("cifar")
-        # cifar, train-test
-        (images1, _), (images2, _) = tf.keras.datasets.cifar10.load_data()
-        #np.random.shuffle(images1)
-        images1 = images1[:3000]
-        images2 = images2[:3000]
-
-        images1 = images1.astype(np.float32)/255.0
-        images2 = images2.astype(np.float32)/255.0
-
-        # calculate FID
-        fid = FID(library=lib)
-        start_time = time.time()
-        fid_score = fid(images1, images2)
-        print(f"{lib}. Time spent: {time.time() - start_time:.1f}[s]")
-        print(f"FID: {fid_score:.3f}")
-
-if __name__ == "__main__":
-    test()
+    fid_score = FIDTF(batch_size=50, scaling=True)(images1, images2)
+    print("FID tensorflow: ", fid_score)
