@@ -31,7 +31,7 @@ def calc_cov(x):
 # FID (Numpy)
 # -------------------------------------------------------
 class FIDNumpy:
-    def __init__(self, batch_size=50, scaling=True, preprocess_input=True):
+    def __init__(self, batch_size=50, scaling=True, preprocess_input=True, verbose=1):
         self.model_shape = (299,299,3) # Inception V3
         self.BATCH_SIZE = batch_size
 
@@ -39,6 +39,7 @@ class FIDNumpy:
         self.scaling = scaling
 
         self.preprocess_input = preprocess_input
+        self.verbose = verbose
 
     """ ------------------------
     FID: Numpy
@@ -67,8 +68,8 @@ class FIDNumpy:
         assert imgs1.min() >= 0.0, "Invalid imgs1 value, under 0.0"
         assert imgs2.min() >= 0.0, "Invalid imgs2 value, under 0.0"
 
-        assert isinstance(imgs1[0,0,0,0], np.float32), "Type Error, imgs type must be float" # arrayのうちの一つをチェック
-        assert isinstance(imgs2[0,0,0,0], np.float32), "Type Error, imgs type must be float" #
+        #assert isinstance(imgs1[0,0,0,0], np.float32), "Type Error, imgs type must be float" # arrayのうちの一つをチェック
+        #assert isinstance(imgs2[0,0,0,0], np.float32), "Type Error, imgs type must be float" #
 
         NUM_ITER = imgs1.shape[0] // self.BATCH_SIZE
         feat1 = np.zeros(shape=[0, 2048])
@@ -80,7 +81,7 @@ class FIDNumpy:
             imgs2 = tf.keras.applications.inception_v3.preprocess_input(255.0*imgs2) # https://www.tensorflow.org/api_docs/python/tf/keras/applications/inception_v3/preprocess_input
 
         for i in range(NUM_ITER):
-            if(i%10 == 0): print(f"calculating features...(numpy), batch:{i+1}/{NUM_ITER}")
+            if(self.verbose==1 and i%10 == 0): print(f"calculating features...(numpy), batch:{i+1}/{NUM_ITER}")
             imgs1_batch = imgs1[self.BATCH_SIZE*i:self.BATCH_SIZE*(i+1)]
             imgs2_batch = imgs2[self.BATCH_SIZE*i:self.BATCH_SIZE*(i+1)]
 
@@ -110,7 +111,7 @@ class FIDNumpy:
 FID: TensorFlow
 """
 class FIDTF:#(tf.keras.layers.Layer):
-    def __init__(self, batch_size, scaling=True, preprocess_input=True):
+    def __init__(self, batch_size, scaling=True, preprocess_input=True, verbose=1):
         #super(FIDLayer, self).__init__()
         self.model_shape = (299,299,3) # Inception V3
         self.BATCH_SIZE = batch_size
@@ -120,6 +121,7 @@ class FIDTF:#(tf.keras.layers.Layer):
         self.scaling = scaling
 
         self.preprocess_input = preprocess_input
+        self.verbose = verbose
 
     def rescale_color_images_tf(self, imgs1, imgs2):
         imgs1 = tf.image.resize(imgs1, size=(self.model_shape[0], self.model_shape[1]), method="nearest")
@@ -159,9 +161,10 @@ class FIDTF:#(tf.keras.layers.Layer):
 
     @tf.function
     def fid_tf_loop(self, i, feat1, feat2, imgs1, imgs2):
-        op = tf.cond(pred=(tf.math.mod(i, 10)==0)
-                , true_fn=lambda: tf.print("calculating features...(tfp), batch:", i+1, "/", imgs1.shape[0]//tf.constant(self.BATCH_SIZE))
-                , false_fn=lambda: tf.no_op())
+        if(self.verbose==1):
+            op = tf.cond(pred=(tf.math.mod(i, 10)==0)
+                    , true_fn=lambda: tf.print("calculating features...(tfp), batch:", i+1, "/", imgs1.shape[0]//tf.constant(self.BATCH_SIZE))
+                    , false_fn=lambda: tf.no_op())
 
         # バッチの切り抜き。書き方が特殊, [None, 28, 28, 1] -> [bs, 28, 28, 1]
         _imgs1 = tf.slice(input_=imgs1, begin=[self.BATCH_SIZE*i, 0, 0, 0], size=[self.BATCH_SIZE, imgs1.get_shape()[1], imgs1.get_shape()[2], imgs1.get_shape()[3]])
